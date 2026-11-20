@@ -11,6 +11,12 @@
   var lock = function (n) { if (n.getAttribute('inputmode') !== 'none') n.setAttribute('inputmode', 'none'); };
   var scan = function (r) { if (r.matches && r.matches(EDIT)) lock(r); r.querySelectorAll && r.querySelectorAll(EDIT).forEach(lock); };
   scan(document.documentElement);
+  // pages (Wikipedia's search overlay) create a field and focus() it in the same tick, before the observer runs,
+  // so lock the field synchronously inside focus() itself
+  var _focus = HTMLElement.prototype.focus;
+  HTMLElement.prototype.focus = function () { if (this.matches && this.matches(EDIT)) lock(this); return _focus.apply(this, arguments); };
+  var _create = Document.prototype.createElement;
+  Document.prototype.createElement = function () { var el = _create.apply(this, arguments); if (el.matches && el.matches(EDIT)) lock(el); return el; };
   new MutationObserver(function (ms) { ms.forEach(function (m) { m.addedNodes.forEach(function (n) { n.nodeType === 1 && scan(n); }); }); })
     .observe(document.documentElement, { childList: true, subtree: true });
   ['touchstart', 'mousedown'].forEach(function (t) {
