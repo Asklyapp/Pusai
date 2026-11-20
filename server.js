@@ -29,16 +29,25 @@ app.get('/slurp-frame-bridge.js', (req, res) => {
 });
 app.get('/', (req, res) => res.send('SlurpOS proxy is running.'));
 
-app.get('/proxy', async (req, res) => {
+app.options('/proxy', (req, res) => {
+  res.set({ 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': '*', 'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || '*', 'Access-Control-Max-Age': '86400' }).sendStatus(204);
+});
+
+app.all('/proxy', express.raw({ type: () => true, limit: '10mb' }), async (req, res) => {
   try {
     const target = await safeUrl(req.query.url);
-    const r = await fetch(target, { redirect: 'follow', headers: { 'user-agent': UA, 'accept-language': req.headers['accept-language'] || 'en-US,en;q=0.9' } });
+    const fwd = { 'user-agent': UA, 'accept-language': req.headers['accept-language'] || 'en-US,en;q=0.9', origin: target.origin, referer: target.origin + '/' };
+    for (const h of ['content-type', 'accept', 'authorization']) if (req.headers[h]) fwd[h] = req.headers[h];
+    for (const h in req.headers) if (/^x-(?!slurp|forwarded|render|request-id)/i.test(h)) fwd[h] = req.headers[h];
+    const hasBody = !/^(GET|HEAD)$/i.test(req.method) && Buffer.isBuffer(req.body) && req.body.length;
+    const r = await fetch(target, { method: req.method, redirect: 'follow', headers: fwd, body: hasBody ? req.body : undefined });
     const finalUrl = r.url || target.href;
     const type = r.headers.get('content-type') || 'application/octet-stream';
     res.status(r.status);
     res.set('Content-Type', type);
     res.removeHeader('X-Frame-Options');
     res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Expose-Headers', '*');
     if (!/text\/html/i.test(type)) return res.send(Buffer.from(await r.arrayBuffer()));
 
     let html = await r.text();

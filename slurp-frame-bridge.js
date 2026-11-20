@@ -1,3 +1,47 @@
+(function () {
+  /* PART 0: make big JS sites (YouTube, Google...) survive being served from a different origin.
+     Their scripts run on the proxy's origin but think they live on the real site, so API calls (fetch/XHR) get blocked by CORS
+     and history.pushState throws a SecurityError. Either one makes the page blank itself after a second. */
+  if (window.__slurpShim) return; window.__slurpShim = 1;
+  var P = window.__SLURP_PROXY__, BASE = window.__SLURP_URL__;
+  var absU = function (u) { return new URL(String(u), BASE).href; };
+  var ext = function (u) { return /^https?:/i.test(u) && u.indexOf(P + '/') !== 0; };
+  var prox0 = function (u) { return P + '/proxy?url=' + encodeURIComponent(u); };
+
+  var _fetch = window.fetch;
+  if (_fetch) window.fetch = function (input, init) {
+    try {
+      var isReq = typeof Request !== 'undefined' && input instanceof Request;
+      var url = absU(isReq ? input.url : input);
+      if (!ext(url)) return _fetch.apply(this, arguments);
+      var o = {}; init = init || {};
+      for (var k in init) o[k] = init[k];
+      o.credentials = 'omit'; delete o.mode;
+      if (isReq) {
+        o.method = o.method || input.method; o.headers = o.headers || input.headers;
+        if (o.body === undefined && !/^(GET|HEAD)$/i.test(input.method))
+          return input.clone().arrayBuffer().then(function (b) { o.body = b; return _fetch(prox0(url), o); });
+      }
+      return _fetch(prox0(url), o);
+    } catch (e) { return _fetch.apply(this, arguments); }
+  };
+
+  var _open = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (m, u) {
+    var a = [].slice.call(arguments);
+    try { var url = absU(u); if (ext(url)) a[1] = prox0(url); } catch (e) {}
+    var r = _open.apply(this, a);
+    try { this.withCredentials = false; } catch (e) {}
+    return r;
+  };
+
+  if (navigator.sendBeacon) { var _sb = navigator.sendBeacon.bind(navigator); navigator.sendBeacon = function (u, d) { try { var url = absU(u); if (ext(url)) return true; } catch (e) {} return _sb(u, d); }; }
+
+  ['pushState', 'replaceState'].forEach(function (n) {
+    var o = history[n]; history[n] = function () { try { return o.apply(this, arguments); } catch (e) {} };
+  });
+})();
+
 /* Runs INSIDE a proxied page. It (1) stops the phone's native keyboard, (2) tells the Safari app a field was
    tapped, (3) types whatever the Safari app sends back, (4) keeps links/forms going through the proxy. */
 (function () {
