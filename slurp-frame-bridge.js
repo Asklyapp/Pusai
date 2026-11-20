@@ -4,7 +4,7 @@
   if (window.__slurpBridge || window.parent === window) return; window.__slurpBridge = 1;
   var PROXY = window.__SLURP_PROXY__, EDIT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]):not([type=file]):not([type=color]):not([type=image]):not([type=hidden]),textarea';
   var active = null, tell = function (m) { m.slurpFrame = 1; window.parent.postMessage(m, '*'); };
-  var editable = function (n) { return n && n.nodeType === 1 && n.matches && n.matches(EDIT) && !n.disabled && !n.readOnly; };
+  var editable = function (n) { return n && n.nodeType === 1 && n.matches && n.matches(EDIT) && !n.disabled && (!n.readOnly || !!n.__slurpRO); };   // __slurpRO = our own brief readOnly lock, which must not hide the field
   var prox = function (u) { return PROXY + '/proxy?url=' + encodeURIComponent(u); };
 
   // 1. no native keyboard: inputmode=none on every field, plus a brief readOnly so iOS never opens it
