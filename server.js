@@ -7,6 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const app = express();
+app.set('trust proxy', true);   // Render terminates https, so req.protocol would otherwise say http
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SELF = process.env.PUBLIC_URL || '';          // optional: https://your-app.onrender.com
 const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
@@ -42,7 +43,8 @@ app.get('/proxy', async (req, res) => {
 
     let html = await r.text();
     const base = `<base href="${finalUrl.replace(/"/g, '&quot;')}">`;
-    const bridge = `<script>window.__SLURP_PROXY__=${JSON.stringify(SELF || `${req.protocol}://${req.get('host')}`)};window.__SLURP_URL__=${JSON.stringify(finalUrl)};</script><script src="${SELF || ''}/slurp-frame-bridge.js"></script>`;
+    const origin = (SELF || `https://${req.get('host')}`).replace(/\/$/, '');   // must be absolute: <base> makes relative URLs resolve to the target site
+    const bridge = `<script>window.__SLURP_PROXY__=${JSON.stringify(origin)};window.__SLURP_URL__=${JSON.stringify(finalUrl)};</script><script src="${origin}/slurp-frame-bridge.js"></script>`;
     // drop <meta> CSP tags (they'd block our script), then inject right after <head>
     html = html.replace(/<meta[^>]+http-equiv=["']?content-security-policy["']?[^>]*>/gi, '');
     html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, m => m + base + bridge) : base + bridge + html;
