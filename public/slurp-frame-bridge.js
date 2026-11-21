@@ -1,55 +1,10 @@
-(function () {
-  /* PART 0: make big JS sites (YouTube, Google...) survive being served from a different origin.
-     Their scripts run on the proxy's origin but think they live on the real site, so API calls (fetch/XHR) get blocked by CORS
-     and history.pushState throws a SecurityError. Either one makes the page blank itself after a second. */
-  if (window.__slurpShim) return; window.__slurpShim = 1;
-  var P = window.__SLURP_PROXY__, BASE = window.__SLURP_URL__;
-  var absU = function (u) { return new URL(String(u), BASE).href; };
-  var ext = function (u) { return /^https?:/i.test(u) && u.indexOf(P + '/') !== 0; };
-  var prox0 = function (u) { return P + '/proxy?url=' + encodeURIComponent(u); };
-
-  var _fetch = window.fetch;
-  if (_fetch) window.fetch = function (input, init) {
-    try {
-      var isReq = typeof Request !== 'undefined' && input instanceof Request;
-      var url = absU(isReq ? input.url : input);
-      if (!ext(url)) return _fetch.apply(this, arguments);
-      var o = {}; init = init || {};
-      for (var k in init) o[k] = init[k];
-      o.credentials = 'omit'; delete o.mode;
-      if (isReq) {
-        o.method = o.method || input.method; o.headers = o.headers || input.headers;
-        if (o.body === undefined && !/^(GET|HEAD)$/i.test(input.method))
-          return input.clone().arrayBuffer().then(function (b) { o.body = b; return _fetch(prox0(url), o); });
-      }
-      return _fetch(prox0(url), o);
-    } catch (e) { return _fetch.apply(this, arguments); }
-  };
-
-  var _open = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (m, u) {
-    var a = [].slice.call(arguments);
-    try { var url = absU(u); if (ext(url)) a[1] = prox0(url); } catch (e) {}
-    var r = _open.apply(this, a);
-    try { this.withCredentials = false; } catch (e) {}
-    return r;
-  };
-
-  if (navigator.sendBeacon) { var _sb = navigator.sendBeacon.bind(navigator); navigator.sendBeacon = function (u, d) { try { var url = absU(u); if (ext(url)) return true; } catch (e) {} return _sb(u, d); }; }
-
-  ['pushState', 'replaceState'].forEach(function (n) {
-    var o = history[n]; history[n] = function () { try { return o.apply(this, arguments); } catch (e) {} };
-  });
-})();
-
 /* Runs INSIDE a proxied page. It (1) stops the phone's native keyboard, (2) tells the Safari app a field was
-   tapped, (3) types whatever the Safari app sends back, (4) keeps links/forms going through the proxy. */
+   tapped, (3) types whatever the Safari app sends back, (4) reports the real page address. */
 (function () {
   if (window.__slurpBridge || window.parent === window) return; window.__slurpBridge = 1;
-  var PROXY = window.__SLURP_PROXY__, EDIT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]):not([type=file]):not([type=color]):not([type=image]):not([type=hidden]),textarea';
+  var EDIT = 'input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]):not([type=reset]):not([type=file]):not([type=color]):not([type=image]):not([type=hidden]),textarea';
   var active = null, tell = function (m) { m.slurpFrame = 1; window.parent.postMessage(m, '*'); };
   var editable = function (n) { return n && n.nodeType === 1 && n.matches && n.matches(EDIT) && !n.disabled && (!n.readOnly || !!n.__slurpRO); };   // __slurpRO = our own brief readOnly lock, which must not hide the field
-  var prox = function (u) { return PROXY + '/proxy?url=' + encodeURIComponent(u); };
 
   // 1. no native keyboard: inputmode=none on every field, plus a brief readOnly so iOS never opens it
   var lock = function (n) { if (n.getAttribute('inputmode') !== 'none') n.setAttribute('inputmode', 'none'); };
@@ -102,15 +57,16 @@
     }
   });
 
-  // 4. stay inside the proxy: links and GET forms
-  document.addEventListener('click', function (e) {
-    var a = e.target.closest && e.target.closest('a[href]'); if (!a || e.defaultPrevented) return;
-    var h = a.href; if (!/^https?:/i.test(h) || a.target === '_blank' && false) return;
-    e.preventDefault(); location.href = prox(h); tell({ type: 'nav', url: h });
-  }, true);
-  document.addEventListener('submit', function (e) {
-    var f = e.target; if (e.defaultPrevented || (f.method || 'get').toLowerCase() !== 'get') return;
-    var u = new URL(f.action || location.href, window.__SLURP_URL__); new FormData(f).forEach(function (v, k) { if (typeof v === 'string') u.searchParams.set(k, v); });
-    e.preventDefault(); location.href = prox(u.href); tell({ type: 'nav', url: u.href });
-  }, true);
+
+  // 4. report the page's REAL address + title to the Safari app (Ultraviolet rewrites links/forms itself)
+  var realUrl = function () {
+    try { if (window.__uv && window.__uv.location) return window.__uv.location.href; } catch (x) {}
+    return null;
+  };
+  var last = '';
+  setInterval(function () {
+    var u = realUrl(); if (!u) return;
+    var sig = u + '|' + document.title;
+    if (sig !== last) { last = sig; tell({ type: 'nav', url: u, title: document.title || '' }); }
+  }, 700);
 })();
