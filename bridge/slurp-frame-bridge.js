@@ -59,10 +59,7 @@
 
 
   // 4. report the page's REAL address + title to the Safari app (Ultraviolet rewrites links/forms itself)
-  var realUrl = function () {
-    try { if (window.__uv && window.__uv.location) return window.__uv.location.href; } catch (x) {}
-    return null;
-  };
+  var realUrl = function () { try { return location.href; } catch (x) { return null; } };
   var last = '';
   setInterval(function () {
     var u = realUrl(); if (!u) return;

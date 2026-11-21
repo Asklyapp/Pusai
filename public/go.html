@@ -3,23 +3,18 @@
 <title>Loading…</title>
 <style>body{font:16px -apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;color:#555;text-align:center;padding:20px;box-sizing:border-box}</style>
 </head><body><div id="m">Loading…</div>
-<script src="/baremux/index.js"></script>
-<script src="/uv/uv.bundle.js"></script>
-<script src="/uv.config.js"></script>
 <script>
 (async () => {
   const say = t => document.getElementById('m').textContent = t;
   try {
     const target = new URLSearchParams(location.search).get('url');
     if (!target) return say('No address given.');
-    if (!('serviceWorker' in navigator)) return say('This browser blocked service workers here.');
-    const reg = await navigator.serviceWorker.register('/sw.js', { scope: __uv$config.prefix });
-    await navigator.serviceWorker.ready;
-    if (!navigator.serviceWorker.controller && !reg.active) await new Promise(r => setTimeout(r, 300));
-    const conn = new BareMux.BareMuxConnection('/baremux/worker.js');
-    const wisp = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/wisp/';
-    await conn.setTransport('/epoxy/index.mjs', [{ wisp }]);
-    location.replace(__uv$config.prefix + __uv$config.encodeUrl(target));
+    // keep one session per browser tab-storage; make a new one if the server forgot it (Render restarts)
+    let id = null;
+    try { id = localStorage.getItem('slurpSession'); } catch (e) {}
+    if (id) { const ok = await (await fetch('/sessionexists?id=' + id)).text(); if (ok !== 'exists') id = null; }
+    if (!id) { id = (await (await fetch('/newsession')).text()).trim(); try { localStorage.setItem('slurpSession', id); } catch (e) {} }
+    location.replace('/' + id + '/' + target);
   } catch (e) { say('Proxy failed to start: ' + (e && e.message || e)); }
 })();
 </script></body></html>
